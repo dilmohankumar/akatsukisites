@@ -1,18 +1,24 @@
-import Order from '../models/Order.js';
-import Payment from '../models/Payment.js';
-import Business from '../models/Business.js';
-import { archiveOverflow, releaseReservation, generatePublicId } from './boardPricing.js';
-import { invalidateBoardCache } from './boardCache.js';
+import Order from './models/Order.js';
+import Payment from './models/Payment.js';
+import { getPaymentHooks } from './config.js';
+
+function generatePublicId(prefix) {
+  const year = new Date().getFullYear();
+  const random = Math.random().toString(16).slice(2, 10).toUpperCase();
+  return `${prefix}-${year}-${random}`;
+}
+export { generatePublicId };
 
 /**
- * The single, idempotent path that turns "a payment happened" into "the
- * business is on the board". Called from both the checkout-verify endpoint
- * (fast UX after the customer pays) and the webhook (authoritative source
- * of truth) — whichever arrives first does the work, the other is a no-op.
+ * The single, idempotent path that turns "a payment happened" into
+ * whatever "fulfilled" means for the host app. Called from both the
+ * checkout-verify endpoint (fast UX after the customer pays) and the
+ * webhook (authoritative source of truth) — whichever arrives first does
+ * the work, the other is a no-op.
  *
  * Safe to call twice, three times, or concurrently for the same order: the
- * Order.status compare-and-swap below guarantees the entitlement (Business
- * doc) is created at most once per order.
+ * Order.status compare-and-swap below guarantees onPaymentConfirmed runs
+ * at most once per order.
  */
 export async function confirmOrderPaid({ orderId, providerPaymentId, method }) {
   const order = await Order.findOneAndUpdate(
@@ -25,7 +31,7 @@ export async function confirmOrderPaid({ orderId, providerPaymentId, method }) {
     // Either already confirmed by the other path, or the order is
     // FAILED/EXPIRED/CANCELLED — nothing to do either way.
     const existing = await Order.findById(orderId).lean();
-    return { order: existing, alreadyProcessed: true };
+    return { order: existing, fulfillmentResult: existing?.fulfillmentResult ?? null, alreadyProcessed: true };
   }
 
   // Upsert on providerPaymentId (unique) — if this ever runs twice for the
@@ -48,27 +54,19 @@ export async function confirmOrderPaid({ orderId, providerPaymentId, method }) {
     { upsert: true }
   );
 
-  let business = null;
-  if (!order.businessId) {
-    business = await Business.create({ ...order.claimDraft, amount: order.amount });
-    await Order.updateOne({ _id: order._id }, { $set: { businessId: business._id } });
-    invalidateBoardCache();
-
-    // Best-effort — a failure here must not undo a payment that already succeeded.
-    try {
-      await archiveOverflow();
-    } catch (err) {
-      console.error('[checkout] archiveOverflow failed after payment:', err.message);
-    }
+  let fulfillmentResult = order.fulfillmentResult;
+  if (!order.fulfilled) {
+    const hooks = getPaymentHooks();
+    fulfillmentResult = (await hooks.onPaymentConfirmed({ order, providerPaymentId, method })) ?? null;
+    await Order.updateOne({ _id: order._id }, { $set: { fulfilled: true, fulfillmentResult } });
   }
 
-  return { order, business, alreadyProcessed: false };
+  return { order, fulfillmentResult, alreadyProcessed: false };
 }
 
 /**
- * Marks an order as failed and releases its price reservation so the
- * displayed "next price" doesn't stay stuck high because of a payment
- * nobody completed.
+ * Marks an order as failed and releases whatever computeAmount reserved,
+ * via the host app's releaseAmount hook.
  */
 export async function markOrderFailed(orderId, { failureCode, failureReason } = {}) {
   const order = await Order.findOneAndUpdate(
@@ -77,7 +75,9 @@ export async function markOrderFailed(orderId, { failureCode, failureReason } = 
     { new: true }
   );
   if (order) {
-    await releaseReservation({ amount: order.amount, prevAmount: order.prevAmount });
+    const hooks = getPaymentHooks();
+    await hooks.releaseAmount(order.reservationMeta);
+    await hooks.onPaymentFailed({ order });
   }
   return order;
 }

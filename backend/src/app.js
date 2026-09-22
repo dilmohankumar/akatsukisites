@@ -9,8 +9,8 @@ import rateLimit from 'express-rate-limit';
 
 import businessRoutes from './routes/businessRoutes.js';
 import supportRoutes from './routes/supportRoutes.js';
-import checkoutRoutes from './routes/checkoutRoutes.js';
-import webhookRoutes from './routes/webhookRoutes.js';
+import { checkoutRoutes, webhookRoutes } from './payments/index.js';
+import './paymentsConfig.js'; // registers this app's payment hooks — import before the routes below are used
 import { notFound, errorHandler } from './middleware/errorHandler.js';
 
 const app = express();

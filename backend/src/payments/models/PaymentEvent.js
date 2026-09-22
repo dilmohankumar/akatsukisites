@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 
 /**
  * Audit trail of every webhook event received, keyed by the provider's own
- * event id so the exact same event delivered twice (Razorpay retries on any
+ * event id so the exact same event delivered twice (providers retry on any
  * non-2xx response) is a no-op the second time. Deliberately does NOT store
  * the raw webhook payload — only what's needed to debug and reconcile.
  */

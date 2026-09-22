@@ -23,5 +23,3 @@ export function getPaymentProvider() {
   });
   return instance;
 }
-
-export const CURRENCY = 'INR';

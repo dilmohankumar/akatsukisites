@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
-import { razorpayWebhook } from '../controllers/webhookController.js';
+import { razorpayWebhook } from './webhookController.js';
+import { paymentsErrorHandler } from './errorHandler.js';
 
 const router = Router();
 
@@ -14,5 +15,7 @@ const webhookLimiter = rateLimit({
 });
 
 router.post('/razorpay', webhookLimiter, razorpayWebhook);
+
+router.use(paymentsErrorHandler);
 
 export default router;

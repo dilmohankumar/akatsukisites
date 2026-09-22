@@ -2,7 +2,7 @@ import 'dotenv/config';
 import mongoose from 'mongoose';
 import app from './app.js';
 import { connectDB } from './config/db.js';
-import { startOrderExpirySweep } from './jobs/expireOrders.js';
+import { startOrderExpirySweep } from './payments/index.js';
 
 const PORT = process.env.PORT || 5000;
 

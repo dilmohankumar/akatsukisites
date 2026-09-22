@@ -2,8 +2,8 @@ import mongoose from 'mongoose';
 
 /**
  * One record per actual gateway payment attempt against an Order. Never
- * stores card/UPI credentials — those never reach this server, Razorpay's
- * hosted Checkout collects them directly.
+ * stores card/UPI credentials — those never reach this server, the
+ * provider's hosted Checkout collects them directly.
  */
 const paymentSchema = new mongoose.Schema(
   {
